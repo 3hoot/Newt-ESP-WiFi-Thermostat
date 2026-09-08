@@ -270,23 +270,14 @@ void regulator_init(regulator_args_t *reg_args)
         .out_min = 0.0,
         .out_max = 100.0,
     };
-    reg->pid_cold = (PID_t){
-        .kp = PID_KP_COLD,
-        .ki = PID_KI_COLD,
-        .kd = PID_KD_COLD,
-        .integral = 0.0,
-        .prev_error = 0.0,
-        .out_min = 0.0,
-        .out_max = 100.0,
-    };
 
     reg->setpoint = DEFAULT_SETPOINT;
+    reg->deadband = DEFAULT_DEADBAND;
     reg->output_hot = 0;
     reg->output_cold = 0;
 
     ESP_LOGI(TAG, "Regulator initialized. Setpoint = %.1f C", reg->setpoint);
     ESP_LOGI(TAG, "PID hot:  Kp=%.4f Ki=%.4f Kd=%.4f", reg->pid_hot.kp, reg->pid_hot.ki, reg->pid_hot.kd);
-    ESP_LOGI(TAG, "PID cold: Kp=%.4f Ki=%.4f Kd=%.4f", reg->pid_cold.kp, reg->pid_cold.ki, reg->pid_cold.kd);
 }
 
 void regulator_task(void *args)
@@ -314,30 +305,28 @@ void regulator_task(void *args)
             ESP_LOGE(TAG, "Temperature %.2f C >= max %.2f C, forcing heater off and cooler on",
                      avg_temp, REGULATOR_MAX_TEMPERATURE);
             reg->output_hot = 0;
-            reg->output_cold = 100;
+            reg->output_cold = DEFAULT_COOLER_DUTY;
             pid_reset(&reg->pid_hot);
-            pid_reset(&reg->pid_cold);
             set_pwm_duty_percent(HEATING_PWM_CHANNEL, reg->output_hot);
             set_pwm_duty_percent(COOLING_PWM_CHANNEL, reg->output_cold);
             vTaskDelay(pdMS_TO_TICKS(REGULATOR_INTERVAL_MS));
             continue;
         }
 
-        double error = reg->setpoint - avg_temp;
+        double error_temp = reg->setpoint - avg_temp;
 
         // Split-range control: only one of heater/cooler is ever active.
         // The idle side's PID is reset so it doesn't wind up while unused,
         // and so we get a bumpless start when control switches sides.
-        if (error > 0.0)
+        if (error_temp > reg->deadband / 2)
         {
-            double output = pid_update(&reg->pid_hot, error, dt);
-            pid_reset(&reg->pid_cold);
+            double output = pid_update(&reg->pid_hot, error_temp, dt);
             reg->output_hot = (int)output;
             reg->output_cold = 0;
         }
-        else
+        else if (error_temp < -reg->deadband / 2)
         {
-            double output = pid_update(&reg->pid_cold, -error, dt);
+            double output = DEFAULT_COOLER_DUTY; // Bang-bang logic: full cooler on when below setpoint
             pid_reset(&reg->pid_hot);
             reg->output_hot = 0;
             reg->output_cold = (int)output;
@@ -435,10 +424,9 @@ void regulator_pid_tune_task(void *args)
     run_step_test("HEATER", HEATING_PWM_CHANNEL, TUNE_HEATER_DUTY, ntc);
 
     ESP_LOGI(TAG, "TUNE,COOLDOWN,%d", TUNE_COOLDOWN_MS);
+    set_pwm_duty_percent(COOLING_PWM_CHANNEL, DEFAULT_COOLER_DUTY);
     vTaskDelay(pdMS_TO_TICKS(TUNE_COOLDOWN_MS));
-
-    ESP_LOGI(TAG, "TUNE,START,COOLER");
-    run_step_test("COOLER", COOLING_PWM_CHANNEL, TUNE_COOLER_DUTY, ntc);
+    set_pwm_duty_percent(COOLING_PWM_CHANNEL, 0);
 
     ESP_LOGI(TAG, "TUNE,DONE - read K/L/T off the TUNE,HEATER,... and TUNE,COOLER,... lines above, "
                   "fill in PROCESS_GAIN_*/DEAD_TIME_*/TIME_CONST_* in regulator.h, then swap this task "

@@ -47,13 +47,9 @@ void app_main(void)
     regulator_args.regulator = &regulator;
     regulator_init(&regulator_args);
 
-    xTaskCreate(ntc_readout_task, "ntc_readout_task", 4096, &regulator_args, 5, &ntc_readout_task_handle);
-    xTaskCreate(regulator_pid_tune_task, "regulator_pid_tune_task", 4096, &regulator_args, 5, &regulator_pid_tune_task_handle);
-    // xTaskCreate(regulator_task, "regulator_task", 4096, &regulator_args, 5, &regulator_task_handle);
+    xTaskCreate(ntc_readout_task, "ntc_readout_task", 4096, &regulator_args, 10, &ntc_readout_task_handle);
+    xTaskCreate(regulator_task, "regulator_task", 4096, &regulator_args, 5, &regulator_task_handle);
 
-    while (true)
-    {
-        ESP_LOGI(TAG, "Hello, world! The device is connected to Wi-Fi.");
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Delay for 5 seconds
-    }
+    // Device is calibrated, tune task commented out for normal operation. 
+    // xTaskCreate(regulator_pid_tune_task, "regulator_pid_tune_task", 4096, &regulator_args, 5, &regulator_pid_tune_task_handle);
 }

@@ -16,6 +16,7 @@
 
 // Regulator parameters
 #define DEFAULT_SETPOINT 30.0f          // Default setpoint value for the regulator (celsius)
+#define DEFAULT_DEADBAND 1.0f           // Default deadband for the regulator (celsius)
 #define REGULATOR_INTERVAL_MS 500       // Interval for the regulator control loop (milliseconds)
 #define REGULATOR_MAX_TEMPERATURE 50.0f // Hard safety cutoff temperature (celsius)
 
@@ -56,7 +57,7 @@
  *
  *   K (process gain)   = (final_temp - baseline_temp) / step_duty_percent
  *   L (dead time)      = apparent delay before the temperature starts moving
- *   T (time constant)  = how long it then takes to complete the response
+ *   T (time constant)  = how long it then takes to complete about 63% of the response
  *
  * Do this once with a heater step (cooler off) and once with a cooler step
  * (heater off) - fill in the six numbers below - then:
@@ -65,13 +66,11 @@
  *   Td = 0.5 * L      ->  Kd = Kp * Td
  *
  */
-#define PROCESS_GAIN_HOT 1.0   // K, degrees C per % heater duty
-#define DEAD_TIME_HOT_S 5.0    // L, seconds
-#define TIME_CONST_HOT_S 60.0  // T, seconds
 
-#define PROCESS_GAIN_COLD 1.0  // K, degrees C per % cooler duty (magnitude only)
-#define DEAD_TIME_COLD_S 5.0   // L, seconds
-#define TIME_CONST_COLD_S 60.0 // T, seconds
+// Calibrated values for the heater side of the split-range control. 
+#define PROCESS_GAIN_HOT 0.6598    // K, degrees C per % heater duty
+#define DEAD_TIME_HOT_S 12.0       // L, seconds 
+#define TIME_CONST_HOT_S 301.0     // T, seconds
 
 #define PID_KP_HOT (1.2 * TIME_CONST_HOT_S / (PROCESS_GAIN_HOT * DEAD_TIME_HOT_S))
 #define PID_TI_HOT (2.0 * DEAD_TIME_HOT_S)
@@ -79,20 +78,15 @@
 #define PID_TD_HOT (0.5 * DEAD_TIME_HOT_S)
 #define PID_KD_HOT (PID_KP_HOT * PID_TD_HOT)
 
-#define PID_KP_COLD (1.2 * TIME_CONST_COLD_S / (PROCESS_GAIN_COLD * DEAD_TIME_COLD_S))
-#define PID_TI_COLD (2.0 * DEAD_TIME_COLD_S)
-#define PID_KI_COLD (PID_KP_COLD / PID_TI_COLD)
-#define PID_TD_COLD (0.5 * DEAD_TIME_COLD_S)
-#define PID_KD_COLD (PID_KP_COLD * PID_TD_COLD)
+#define DEFAULT_COOLER_DUTY 100 // % duty to apply to the cooler during normal operation (bang-bang logic, on/off)
 
 // --- Tuning-task parameters (regulator_pid_tune_task) ---
-#define TUNE_HEATER_DUTY 50       // Step duty applied to heater during tuning (0-100 %)
-#define TUNE_COOLER_DUTY 50       // Step duty applied to cooler during tuning (0-100 %)
-#define TUNE_LOG_INTERVAL_MS 1000 // How often to print a temperature log line
-#define TUNE_SETTLE_WINDOW_MS 30000 // Window over which we check whether temp has stopped moving
-#define TUNE_SETTLE_EPSILON_C 0.1   // Max change (C) over that window to call it "settled"
-#define TUNE_TIMEOUT_MS 600000      // Give up on a single step test after this long (10 min)
-#define TUNE_COOLDOWN_MS 30000      // Pause between the heater test and the cooler test
+#define TUNE_HEATER_DUTY 10             // Step duty applied to heater during tuning (0-100 %)
+#define TUNE_LOG_INTERVAL_MS 1000       // How often to print a temperature log line
+#define TUNE_SETTLE_WINDOW_MS 60000     // Window over which we check whether temp has stopped moving
+#define TUNE_SETTLE_EPSILON_C 0.1       // Max change (C) over that window to call it "settled"
+#define TUNE_TIMEOUT_MS 600000          // Give up on a single step test after this long (10 min)
+#define TUNE_COOLDOWN_MS 90000          // Pause between the heater test and the cooler test
 
 // Generic PID structure, now carrying its own integrator/derivative state
 // and output clamp so the anti-windup logic has somewhere to live.
@@ -111,8 +105,8 @@ typedef struct ntc_readout
 {
     double input_temperature[NTC_READOUT_QUEUE_SIZE]; // Circular buffer of recent readings
     size_t index;                                     // Next write position in the circular buffer
-    bool buffer_filled;                                // Whether the buffer has wrapped at least once
-    SemaphoreHandle_t lock;                            // Mutex protecting this struct
+    bool buffer_filled;                               // Whether the buffer has wrapped at least once
+    SemaphoreHandle_t lock;                           // Mutex protecting this struct
 } ntc_readout_t;
 
 // Task-specific regulator structure, for temperature control via a heater
@@ -120,11 +114,12 @@ typedef struct ntc_readout
 typedef struct regulator
 {
     PID_t pid_hot;             // PID parameters + state for heating
-    PID_t pid_cold;            // PID parameters + state for cooling
+                               // no PID parameters for cooling, works on bang-bang logic (on/off) 
     ntc_readout_t ntc_readout; // NTC readout structure
     double setpoint;           // Desired target value (celsius)
     int output_hot;            // Last commanded heater output, 0-100 (%)
     int output_cold;           // Last commanded cooler output, 0-100 (%)
+    double deadband;           // Deadband around the setpoint for split-range control (celsius)
 } regulator_t;
 
 typedef struct regulator_args
@@ -141,7 +136,7 @@ void regulator_init(regulator_args_t *reg_args);
 
 /**
  * @brief Main control loop task. Reads the averaged NTC temperature, runs
- * split-range PID control (heater OR cooler, never both), and drives the
+ * split-range control (heater PID, cooler on/off, never both), and drives the
  * corresponding LEDC PWM output. Includes anti-windup and a hard safety
  * cutoff at REGULATOR_MAX_TEMPERATURE.
  */
@@ -150,8 +145,7 @@ void regulator_task(void *args);
 /**
  * @brief Open-loop step-response tuning task. Drives the heater to
  * TUNE_HEATER_DUTY, logs the temperature curve (tagged "TUNE,HEATER,...")
- * until it settles or times out, then does the same for the cooler at
- * TUNE_COOLER_DUTY (tagged "TUNE,COOLER,..."). Read K/L/T off the logged
+ * until it settles or times out. Read K/L/T off the logged
  * curves (see the comment block above) and fill them into the
  * PROCESS_GAIN_*\DEAD_TIME_*\TIME_CONST_* defines in this header.
  *
