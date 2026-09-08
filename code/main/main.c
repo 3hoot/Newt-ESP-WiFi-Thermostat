@@ -14,11 +14,28 @@
 // User defined headers
 #include "network.h"
 #include "regulator.h"
+#include "server.h"
 
 static const char *TAG = "main";
 
 static regulator_t regulator;
 regulator_args_t regulator_args;
+
+static void regulator_get_params_wrapper(double *setpoint, double *deadband)
+{
+    regulator_get_params(&regulator, setpoint, deadband);
+}
+
+static void regulator_set_params_wrapper(double *setpoint, double *deadband)
+{
+    regulator_set_params(&regulator, *setpoint, *deadband);
+}
+
+static server_regulator_t server_regulator = {
+    .get = regulator_get_params_wrapper,
+    .set = regulator_set_params_wrapper,
+    .current_temp = &regulator.ntc_readout.input_temperature[0]
+};
 
 TaskHandle_t regulator_task_handle = NULL;
 TaskHandle_t ntc_readout_task_handle = NULL;
@@ -52,4 +69,6 @@ void app_main(void)
 
     // Device is calibrated, tune task commented out for normal operation. 
     // xTaskCreate(regulator_pid_tune_task, "regulator_pid_tune_task", 4096, &regulator_args, 5, &regulator_pid_tune_task_handle);
+
+    start_webserver(&server_regulator);
 }

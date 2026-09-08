@@ -65,6 +65,7 @@
  *   Ti = 2 * L        ->  Ki = Kp / Ti
  *   Td = 0.5 * L      ->  Kd = Kp * Td
  *
+ * For more information, see: https://blog.opticontrols.com/ziegler-nichols-tuning-rules/
  */
 
 // Calibrated values for the heater side of the split-range control. 
@@ -120,6 +121,7 @@ typedef struct regulator
     int output_hot;            // Last commanded heater output, 0-100 (%)
     int output_cold;           // Last commanded cooler output, 0-100 (%)
     double deadband;           // Deadband around the setpoint for split-range control (celsius)
+    SemaphoreHandle_t lock;    // Mutex protecting the regulator structure
 } regulator_t;
 
 typedef struct regulator_args
@@ -133,6 +135,16 @@ typedef struct regulator_args
  * the heater and cooler, and the PID gains derived from the ZN defines above.
  */
 void regulator_init(regulator_args_t *reg_args);
+
+/**
+ * @brief Gets the values of the setpoint and deadband from the regulator structure. This is a convenience function for the web server to call.
+ */
+void regulator_get_params(regulator_t *reg, double *setpoint, double *deadband);
+
+/** 
+ * @brief Sets the regulator setpoint and deadband. This is a convenience function for the web server to call.
+ */
+void regulator_set_params(regulator_t *reg, double setpoint, double deadband);
 
 /**
  * @brief Main control loop task. Reads the averaged NTC temperature, runs

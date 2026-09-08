@@ -233,6 +233,14 @@ void regulator_init(regulator_args_t *reg_args)
 {
     regulator_t *reg = reg_args->regulator;
 
+    // --- Mutex for the regulator structure ---
+    reg->lock = xSemaphoreCreateMutex();
+    if (reg->lock == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create regulator lock");
+        return;
+    }
+
     // --- ADC unit ---
     adc_oneshot_unit_init_cfg_t adc_init_cfg = {
         .unit_id = NTC_ADC_UNIT,
@@ -331,6 +339,13 @@ void regulator_task(void *args)
             reg->output_hot = 0;
             reg->output_cold = (int)output;
         }
+        else
+        {
+            // Within deadband: both outputs off, PID reset.
+            pid_reset(&reg->pid_hot);
+            reg->output_hot = 0;
+            reg->output_cold = 0;
+        }
 
         set_pwm_duty_percent(HEATING_PWM_CHANNEL, reg->output_hot);
         set_pwm_duty_percent(COOLING_PWM_CHANNEL, reg->output_cold);
@@ -340,6 +355,36 @@ void regulator_task(void *args)
 
         vTaskDelay(pdMS_TO_TICKS(REGULATOR_INTERVAL_MS));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Setters and getters for web server
+// ---------------------------------------------------------------------------
+
+void regulator_get_params(regulator_t *reg, double *setpoint, double *deadband)
+{
+    if (reg == NULL || setpoint == NULL || deadband == NULL)
+    {
+        return;
+    }
+
+    xSemaphoreTake(reg->lock, pdMS_TO_TICKS(100));
+    *setpoint = reg->setpoint;
+    *deadband = reg->deadband;
+    xSemaphoreGive(reg->lock);
+}
+
+void regulator_set_params(regulator_t *reg, double setpoint, double deadband)
+{
+    if (reg == NULL)
+    {
+        return;
+    }
+
+    xSemaphoreTake(reg->lock, pdMS_TO_TICKS(100));
+    reg->setpoint = setpoint;
+    reg->deadband = deadband;
+    xSemaphoreGive(reg->lock);
 }
 
 // ---------------------------------------------------------------------------
