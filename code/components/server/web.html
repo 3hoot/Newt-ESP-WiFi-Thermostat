@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>NEWT - ESP WiFi Thermostat</title>
+
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+
+    <main class="dashboard">
+
+        <header class="top-bar">
+            <div>
+                <p class="project-label">ESP32-MINI · PID CONTROL</p>
+                <h1>NEWT Thermostat</h1>
+            </div>
+
+            <div class="connection-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="connectionText">ESP32 Offline</span>
+            </div>
+        </header>
+
+        <section class="temperature-panel">
+
+            <div class="temperature-card current-temperature">
+                <p class="card-label">Current Temperature</p>
+
+                <div class="temperature-value">
+                    <span id="currentTemperature">--.-</span><span>°C</span>
+                </div>
+
+                <p class="sensor-info">Temperature sensor reading</p>
+            </div>
+
+            <div class="temperature-card setpoint-temperature">
+                <p class="card-label">Target Temperature</p>
+
+                <div class="temperature-value target">
+                    <span id="targetTemperature">--.-</span><span>°C</span>
+                </div>
+
+                <p class="sensor-info">User-defined setpoint</p>
+            </div>
+
+        </section>
+
+        <section class="control-panel">
+
+            <div class="panel-heading">
+                <h2>Set Temperature</h2>
+                <p>Choose the target value for the PID controller.</p>
+            </div>
+
+            <form class="setpoint-form" id="setpointForm">
+
+                <label for="setpoint">Target temperature [°C]</label>
+                <input type="number" id="setpoint" min="5" max="35" step="0.5" value="30.0">
+
+                <label for="deadband">Deadband [°C]</label>
+                <input type="number" id="deadband" min="0" step="0.1" value="1.0">
+                
+                <button type="submit" id="saveButton">
+                    Save Settings
+                </button>
+
+                <p id="actionMessage"></p>
+
+            </form>
+
+        </section>
+
+        <section class="system-panel">
+
+            <div class="system-item">
+                <p class="system-label">Operating Mode</p>
+                <p class="system-value" id="modeValue">--</p>
+            </div>
+
+            <div class="system-item">
+                <p class="system-label">Heating Output</p>
+                <p class="system-value"><span id="heatingValue">0</span>%</p>
+            </div>
+
+            <div class="system-item">
+                <p class="system-label">Cooling Output</p>
+                <p class="system-value"><span id="coolingValue">0</span>%</p>
+            </div>
+
+        </section>
+
+        <footer>
+            NEWT - ESP WiFi Thermostat · Mechatronics Lab
+        </footer>
+
+    </main>
+
+    <script>
+        const currentTemperature = document.getElementById("currentTemperature");
+        const targetTemperature = document.getElementById("targetTemperature");
+
+        const connectionText = document.getElementById("connectionText");
+        const statusDot = document.getElementById("statusDot");
+
+        const modeValue = document.getElementById("modeValue");
+        const deadbandInput = document.getElementById("deadband");
+        const heatingValue = document.getElementById("heatingValue");
+        const coolingValue = document.getElementById("coolingValue");
+
+        const setpointForm = document.getElementById("setpointForm");
+        const setpointInput = document.getElementById("setpoint");
+        
+        if (document.activeElement !== deadbandInput) {
+            deadbandInput.value = status.deadband;
+        }
+
+        heatingValue.textContent = status.heating;
+        coolingValue.textContent = status.cooling;
+        
+        if (status.heating > 0) modeValue.textContent = "Heating";
+        else if(status.cooling > 0) modeValue.textContent = "Cooling";
+        else modeValue.textContent = "Idle";
+
+
+        const saveButton = document.getElementById("saveButton");
+        
+        const actionMessage = document.getElementById("actionMessage");
+
+
+        function formatTemperature(value) {
+            const number = Number(value);
+
+            if (!Number.isFinite(number)) {
+                return "--.-";
+            }
+
+            return number.toFixed(1);
+        }
+
+
+        function setControlsEnabled(enabled) {
+            setpointInput.disabled = !enabled;
+            saveButton.disabled = !enabled;
+            deadbandInput.disabled = !enabled;
+        }
+
+
+        async function refreshStatus() {
+            try {
+                const response = await fetch("/api/status", {
+                    cache: "no-store"
+                });
+
+                const status = await response.json();
+
+                currentTemperature.textContent =
+                    formatTemperature(status.temp);
+
+                targetTemperature.textContent =
+                    formatTemperature(status.setpoint);
+
+                if (
+                    document.activeElement !== setpointInput &&
+                    status.setpoint !== null
+                ) {
+                    setpointInput.value =
+                        formatTemperature(status.setpoint);
+                }
+
+                connectionText.textContent = "Online";
+                statusDot.style.backgroundColor = "#38b878";
+                setControlEnabled(true);
+
+
+                modeValue.textContent = status.mode || "Stopped";
+
+
+            } catch (error) {
+                connectionText.textContent = "Server Error";
+                statusDot.style.backgroundColor = "#cf5a65";
+
+                setControlsEnabled(false);
+            }
+        }
+
+
+        async function saveSettings() {
+            actionMessage.textContent = "Saving...";
+
+            try {
+                const response = await fetch("/api/settings", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        setpoint: parseFloat(stpointInput.value),
+                        deadband: parseFloat(deadbandInput.value)
+                    })
+                });
+
+                actionMessage.textContent = "Settings updated.";
+                refreshStatus;
+
+            } catch (error) {
+                actionMessage.textContent =
+                    "Cannot connect to the server.";
+            }
+        }
+
+
+        setpointForm.addEventListener("submit", function(event) {
+            event.preventDefault();
+            saveSettings()
+        });
+
+        refreshStatus();
+        setInterval(refreshStatus, 2000);
+    </script>
+
+</body>
+</html>
