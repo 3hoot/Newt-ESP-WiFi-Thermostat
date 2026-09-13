@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "mdns.h"
 
 #include "esp_log.h"
 #include "esp_system.h" // System initialization and management
@@ -28,6 +29,25 @@ const int WIFI_CONNECTED_EVENT = BIT0; // Event bit for Wi-Fi connection status
 
 // Static function prototypes (internal to this file)
 static void get_device_service_name(char *service_name, size_t max);
+
+static bool mdns_started = false;
+
+static void start_mdns(void)
+{
+    if (mdns_started)
+        return;
+
+    ESP_ERROR_CHECK(mdns_init());
+    ESP_ERROR_CHECK(mdns_hostname_set("thermo"));
+    ESP_ERROR_CHECK(mdns_instance_name_set("NEWT-ESP-WIFI Thermostat"));
+
+    ESP_ERROR_CHECK(mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0));
+
+    mdns_started = true;
+
+    ESP_LOGI(TAG, "mDNS started: http://thermo.local");
+}
+
 static void wifi_event_handler(void *args, esp_event_base_t event_base,
                                int32_t event_id, void *event_data);
 
@@ -164,5 +184,6 @@ static void wifi_event_handler(void *args, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got IP address: " IPSTR, IP2STR(&event->ip_info.ip));
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_EVENT);
+        start_mdns();
     }
 }
