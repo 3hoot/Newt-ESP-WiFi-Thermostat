@@ -53,8 +53,12 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     char response[128];
     snprintf(response, sizeof(response),
-             "{\"temp\":%.1f,\"setpoint\":%.1f,\"deadband\":%.1f}",
-             *(shared_regulator->current_temp), setpoint, deadband);
+        "{\"temp\":%.1f,\"setpoint\":%.1f,\"deadband\":%.1f,\"heating\":%d,\"cooling\":%d}",
+        *(shared_regulator->current_temp),
+        setpoint,
+        deadband,
+        *(shared_regulator->output_hot),
+        *(shared_regulator->output_cold));
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, response);

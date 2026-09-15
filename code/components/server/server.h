@@ -10,6 +10,8 @@ typedef struct server_regulator {
     setting_update get;
     setting_update set;
     double *current_temp;
+    int *output_hot;
+    int *output_cold;
 } server_regulator_t;
 
 // Function to start the web server

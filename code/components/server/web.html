@@ -114,17 +114,6 @@
         const setpointForm = document.getElementById("setpointForm");
         const setpointInput = document.getElementById("setpoint");
         
-        if (document.activeElement !== deadbandInput) {
-            deadbandInput.value = status.deadband;
-        }
-
-        heatingValue.textContent = status.heating;
-        coolingValue.textContent = status.cooling;
-        
-        if (status.heating > 0) modeValue.textContent = "Heating";
-        else if(status.cooling > 0) modeValue.textContent = "Cooling";
-        else modeValue.textContent = "Idle";
-
 
         const saveButton = document.getElementById("saveButton");
         
@@ -157,6 +146,18 @@
 
                 const status = await response.json();
 
+                if (document.activeElement !== deadbandInput) {
+                    deadbandInput.value = status.deadband;
+                }
+
+                heatingValue.textContent = status.heating;
+                coolingValue.textContent = status.cooling;
+        
+                if (status.heating > 0) modeValue.textContent = "Heating";
+                else if(status.cooling > 0) modeValue.textContent = "Cooling";
+                else modeValue.textContent = "Idle";
+
+
                 currentTemperature.textContent =
                     formatTemperature(status.temp);
 
@@ -173,7 +174,7 @@
 
                 connectionText.textContent = "Online";
                 statusDot.style.backgroundColor = "#38b878";
-                setControlEnabled(true);
+                setControlsEnabled(true);
 
 
                 modeValue.textContent = status.mode || "Stopped";
@@ -198,13 +199,13 @@
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        setpoint: parseFloat(stpointInput.value),
+                        setpoint: parseFloat(setpointInput.value),
                         deadband: parseFloat(deadbandInput.value)
                     })
                 });
 
                 actionMessage.textContent = "Settings updated.";
-                refreshStatus;
+                refreshStatus();
 
             } catch (error) {
                 actionMessage.textContent =

@@ -34,7 +34,9 @@ static void regulator_set_params_wrapper(double *setpoint, double *deadband)
 static server_regulator_t server_regulator = {
     .get = regulator_get_params_wrapper,
     .set = regulator_set_params_wrapper,
-    .current_temp = &regulator.ntc_readout.input_temperature[0]
+    .current_temp = &regulator.ntc_readout.input_temperature[0],
+    .output_hot = &regulator.output_hot,
+    .output_cold = &regulator.output_cold 
 };
 
 TaskHandle_t regulator_task_handle = NULL;
