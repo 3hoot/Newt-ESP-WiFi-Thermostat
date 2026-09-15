@@ -183,7 +183,7 @@
             } catch (error) {
                 connectionText.textContent = "Server Error";
                 statusDot.style.backgroundColor = "#cf5a65";
-
+                console.error("Error fetching status:", error);
                 setControlsEnabled(false);
             }
         }
