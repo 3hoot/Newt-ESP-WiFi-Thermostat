@@ -12,6 +12,8 @@
 extern EventGroupHandle_t wifi_event_group;
 extern const int WIFI_CONNECTED_EVENT;
 
+#define WIFI_PROV_MAX_RETRY (5)
+
 /**
  * @brief Initializes the Wi-Fi stack and sets up event handlers for Wi-Fi and IP events.
  *

@@ -29,8 +29,11 @@ const int WIFI_CONNECTED_EVENT = BIT0; // Event bit for Wi-Fi connection status
 
 // Static function prototypes (internal to this file)
 static void get_device_service_name(char *service_name, size_t max);
+static void start_wifi(const bool provisioned);
 
+// Static variables to track mDNS status and Wi-Fi provisioning retry count
 static bool mdns_started = false;
+static uint8_t wifi_prov_retry_count = 0;
 
 static void start_mdns(void)
 {
@@ -81,6 +84,11 @@ void wifi_init()
     bool provisioned = false;
     ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
 
+    start_wifi(provisioned);
+}
+
+static void start_wifi(const bool provisioned)
+{
     if (!provisioned)
     {
         ESP_LOGI(TAG, "Device is not provisioned, starting provisioning service");
@@ -97,7 +105,7 @@ void wifi_init()
     else
     {
         ESP_LOGI(TAG, "Device is already provisioned, connecting to Wi-Fi");
-        wifi_prov_mgr_deinit(); // Deinitialize provisioning manager because it's no longer needed
+        // Do not deinitialize provisioning manager here, as it may be needed for future provisioning events
 
         // Start Wi-Fi in station mode
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -171,7 +179,17 @@ static void wifi_event_handler(void *args, esp_event_base_t event_base,
             esp_wifi_connect(); // Attempt to connect to the configured Wi-Fi network
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
-            ESP_LOGI(TAG, "Wi-Fi STA disconnected, attempting to reconnect...");
+            if (wifi_prov_retry_count < WIFI_PROV_MAX_RETRY)
+            {
+                wifi_prov_retry_count++;
+                ESP_LOGI(TAG, "Retrying Wi-Fi connection (%d/%d)", wifi_prov_retry_count, WIFI_PROV_MAX_RETRY);
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Max Wi-Fi connection retries reached. Provisioning...");
+                start_wifi(false); // Restart provisioning if max retries reached
+                return;
+            }
             esp_wifi_connect(); // Attempt to reconnect
             break;
         default:
