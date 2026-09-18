@@ -5,9 +5,6 @@
 # Ignore devcontainer files
 .devcontainer/
 
-# Ignore docs (for now)
-docs/
-
 # Python cache files and environments
 __pycache__/
 venv/
